@@ -6,7 +6,7 @@
     <application
         android:allowBackup="true"
         android:label="Auto Clicker"
-        android:theme="@android:style/Theme.Material.Light">
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
 
         <activity
             android:name=".MainActivity"
