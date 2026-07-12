@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="الحالة: خدمة إمكانية الوصول غير مفعّلة"
+        android:textSize="16sp"
+        android:paddingBottom="16dp" />
+
+    <Button
+        android:id="@+id/openAccessibilityBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="فتح إعدادات إمكانية الوصول لتفعيل الخدمة" />
+
+    <View android:layout_width="match_parent" android:layout_height="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="الفاصل الزمني بين النقرات (ملي ثانية):" />
+
+    <EditText
+        android:id="@+id/intervalInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:text="1000" />
+
+    <View android:layout_width="match_parent" android:layout_height="16dp" />
+
+    <Button
+        android:id="@+id/pickPointBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="تحديد نقطة النقر (اسحب المؤشر العائم فوق الشاشة)" />
+
+    <TextView
+        android:id="@+id/pointText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="نقطة النقر الحالية: 500 , 900" />
+
+    <View android:layout_width="match_parent" android:layout_height="16dp" />
+
+    <Button
+        android:id="@+id/startStopBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ابدأ النقر التلقائي" />
+
+</LinearLayout>
