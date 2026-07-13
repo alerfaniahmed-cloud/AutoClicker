@@ -39,13 +39,21 @@
         android:id="@+id/pickPointBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="تحديد نقطة النقر (اسحب المؤشر العائم فوق الشاشة)" />
+        android:text="إضافة نقطة نقر جديدة" />
+
+    <View android:layout_width="match_parent" android:layout_height="8dp" />
+
+    <Button
+        android:id="@+id/clearPointsBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="مسح كل النقاط" />
 
     <TextView
         android:id="@+id/pointText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="نقطة النقر الحالية: 500 , 900" />
+        android:text="عدد نقاط النقر: 0" />
 
     <View android:layout_width="match_parent" android:layout_height="16dp" />
 
