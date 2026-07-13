@@ -132,6 +132,13 @@ class ScreenCaptureService : Service() {
             val projectionManager =
                 getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, data)
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    super.onStop()
+                    virtualDisplay?.release()
+                    virtualDisplay = null
+                }
+            }, Handler(Looper.getMainLooper()))
             setupVirtualDisplay()
         }
 
