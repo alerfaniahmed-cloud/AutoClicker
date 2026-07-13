@@ -99,8 +99,11 @@ class MainActivity : AppCompatActivity() {
 
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val marker = View(this).apply {
-            setBackgroundColor(0x88FF0000.toInt())
-        }
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(0xCCFF0000.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
 
         val size = 60
         val params = WindowManager.LayoutParams(
