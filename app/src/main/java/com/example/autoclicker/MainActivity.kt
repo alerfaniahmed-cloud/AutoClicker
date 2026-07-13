@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
                 setStroke(4, 0xFFFFFFFF.toInt())
             }}
 
-        val size = 60
+        val size = 100
         val params = WindowManager.LayoutParams(
             size, size,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
