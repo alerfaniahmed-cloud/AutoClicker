@@ -19,8 +19,11 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    private val points = mutableListOf<ClickPoint>()
-    private val pointMarkers = mutableListOf<View>()
+   companion object {
+        val points = mutableListOf<ClickPoint>()
+        val pointMarkers = mutableListOf<View>()
+    } 
+    
 
     private lateinit var statusText: TextView
     private lateinit var pointText: TextView
