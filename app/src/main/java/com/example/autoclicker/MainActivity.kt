@@ -1,12 +1,17 @@
 package com.example.autoclicker
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -19,11 +24,11 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-   companion object {
+    companion object {
         val points = mutableListOf<ClickPoint>()
         val pointMarkers = mutableListOf<View>()
-    } 
-    
+        const val SCREEN_CAPTURE_REQUEST_CODE = 4001
+    }
 
     private lateinit var statusText: TextView
     private lateinit var pointText: TextView
@@ -32,6 +37,8 @@ class MainActivity : AppCompatActivity() {
 
     private var pickerOverlay: View? = null
     private var stopOverlay: View? = null
+
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,7 +84,69 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "اضغط الزر العائم بالشاشة للتحكم بالنقر"
         }
 
+        findViewById<Button>(R.id.pickTargetBtn).setOnClickListener {
+            if (!Settings.canDrawOverlays(this)) {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivity(intent)
+                return@setOnClickListener
+            }
+            if (ScreenCaptureService.instance == null) {
+                val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(mpm.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
+            } else {
+                showTargetPicker()
+            }
+        }
+
+        findViewById<Button>(R.id.smartClickBtn).setOnClickListener {
+            val svc = ScreenCaptureService.instance
+            if (svc == null) {
+                statusText.text = "أولاً التقط صورة الهدف"
+                return@setOnClickListener
+            }
+            if (ScreenCaptureService.targetBitmap == null) {
+                statusText.text = "ما فيه صورة هدف محفوظة، التقطها أول"
+                return@setOnClickListener
+            }
+            if (ClickerAccessibilityService.instance == null) {
+                statusText.text = "فعّل خدمة إمكانية الوصول أولاً"
+                return@setOnClickListener
+            }
+            val btn = it as Button
+            if (ScreenCaptureService.isMatching) {
+                svc.stopSmartMatching()
+                btn.text = "بدء التعرف الذكي"
+                statusText.text = "التعرف الذكي متوقف"
+            } else {
+                svc.startSmartMatching()
+                btn.text = "إيقاف التعرف الذكي"
+                statusText.text = "التعرف الذكي شغال..."
+            }
+        }
+
         updatePointText()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {
+            val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra("resultCode", resultCode)
+                putExtra("data", data)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            statusText.text = "جاري تجهيز التقاط الشاشة..."
+            handler.postDelayed({
+                showTargetPicker()
+            }, 800)
+        }
     }
 
     override fun onResume() {
@@ -161,6 +230,91 @@ class MainActivity : AppCompatActivity() {
 
         wm.addView(marker, params)
         pickerOverlay = marker
+    }
+
+    private fun showTargetPicker() {
+        if (pickerOverlay != null) return
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val marker = TextView(this).apply {
+            text = "🎯"
+            gravity = Gravity.CENTER
+            textSize = 20f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xCCFFC107.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+
+        val size = 120
+        val params = WindowManager.LayoutParams(
+            size, size,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 500 - size / 2
+        params.y = 900 - size / 2
+
+        var finalX = 500f
+        var finalY = 900f
+
+        marker.setOnTouchListener(object : View.OnTouchListener {
+            var initialX = 0
+            var initialY = 0
+            var touchX = 0f
+            var touchY = 0f
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - touchX).toInt()
+                        params.y = initialY + (event.rawY - touchY).toInt()
+                        wm.updateViewLayout(marker, params)
+                        finalX = params.x + size / 2f
+                        finalY = params.y + size / 2f
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        wm.removeView(marker)
+                        pickerOverlay = null
+                        saveTargetImage(finalX, finalY)
+                    }
+                }
+                return true
+            }
+        })
+
+        wm.addView(marker, params)
+        pickerOverlay = marker
+    }
+
+    private fun saveTargetImage(x: Float, y: Float) {
+        val svc = ScreenCaptureService.instance
+        val full = svc?.captureScreen()
+        if (full == null) {
+            statusText.text = "ما قدرت ألتقط الشاشة، حاول مرة ثانية"
+            return
+        }
+        val boxSize = 160
+        val half = boxSize / 2
+        val left = (x - half).toInt().coerceIn(0, (full.width - boxSize).coerceAtLeast(0))
+        val top = (y - half).toInt().coerceIn(0, (full.height - boxSize).coerceAtLeast(0))
+        val w = boxSize.coerceAtMost(full.width)
+        val h = boxSize.coerceAtMost(full.height)
+        val cropped = Bitmap.createBitmap(full, left, top, w, h)
+        ScreenCaptureService.targetBitmap = cropped
+        statusText.text = "تم حفظ صورة الهدف ✅ الآن اضغط بدء التعرف الذكي"
     }
 
     private fun addPointMarker(x: Float, y: Float) {
