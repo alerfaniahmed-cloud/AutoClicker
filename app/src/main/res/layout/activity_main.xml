@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical"
@@ -19,7 +20,8 @@
         android:layout_height="wrap_content"
         android:text="فتح إعدادات إمكانية الوصول لتفعيل الخدمة" />
 
-    <View android:layout_width="match_parent" android:layout_height="16dp" />
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
 
     <TextView
         android:layout_width="match_parent"
@@ -33,7 +35,8 @@
         android:inputType="number"
         android:text="1000" />
 
-    <View android:layout_width="match_parent" android:layout_height="16dp" />
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
 
     <Button
         android:id="@+id/pickPointBtn"
@@ -41,7 +44,8 @@
         android:layout_height="wrap_content"
         android:text="إضافة نقطة نقر جديدة" />
 
-    <View android:layout_width="match_parent" android:layout_height="8dp" />
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
 
     <Button
         android:id="@+id/clearPointsBtn"
@@ -55,12 +59,31 @@
         android:layout_height="wrap_content"
         android:text="عدد نقاط النقر: 0" />
 
-    <View android:layout_width="match_parent" android:layout_height="16dp" />
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
 
     <Button
         android:id="@+id/startStopBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="ابدأ النقر التلقائي" />
+
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
+
+    <Button
+        android:id="@+id/pickTargetBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="التقاط صورة الهدف" />
+
+    <View android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <Button
+        android:id="@+id/smartClickBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="بدء التعرف الذكي" />
 
 </LinearLayout>
