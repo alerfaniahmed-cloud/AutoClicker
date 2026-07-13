@@ -13,9 +13,17 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import androidx.core.app.NotificationCompat
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.core.Point
+import org.opencv.imgproc.Imgproc
 
 class ScreenCaptureService : Service() {
 
@@ -24,11 +32,80 @@ class ScreenCaptureService : Service() {
         var mediaProjection: MediaProjection? = null
         const val CHANNEL_ID = "screen_capture_channel"
         const val NOTIF_ID = 1001
+
+        var targetBitmap: Bitmap? = null
+        var isMatching = false
     }
 
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var latestBitmap: Bitmap? = null
+
+    private val matchHandler = Handler(Looper.getMainLooper())
+    private var lastClickTime = 0L
+
+    private val matchRunnable = object : Runnable {
+        override fun run() {
+            if (!isMatching) return
+            val target = targetBitmap
+            val screen = captureScreen()
+            if (target != null && screen != null) {
+                val point = findMatch(screen, target)
+                if (point != null) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastClickTime > 1500) {
+                        lastClickTime = now
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            ClickerAccessibilityService.instance?.performClick(
+                                point.x.toFloat(), point.y.toFloat()
+                            )
+                        }
+                    }
+                }
+            }
+            matchHandler.postDelayed(this, 700)
+        }
+    }
+
+    fun startSmartMatching() {
+        if (isMatching) return
+        isMatching = true
+        matchHandler.post(matchRunnable)
+    }
+
+    fun stopSmartMatching() {
+        isMatching = false
+        matchHandler.removeCallbacks(matchRunnable)
+    }
+
+    private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
+        return try {
+            val screenMat = Mat()
+            Utils.bitmapToMat(screen, screenMat)
+            val targetMat = Mat()
+            Utils.bitmapToMat(target, targetMat)
+
+            Imgproc.cvtColor(screenMat, screenMat, Imgproc.COLOR_RGBA2RGB)
+            Imgproc.cvtColor(targetMat, targetMat, Imgproc.COLOR_RGBA2RGB)
+
+            val resultCols = screenMat.cols() - targetMat.cols() + 1
+            val resultRows = screenMat.rows() - targetMat.rows() + 1
+            if (resultCols <= 0 || resultRows <= 0) return null
+
+            val result = Mat(resultRows, resultCols, CvType.CV_32FC1)
+            Imgproc.matchTemplate(screenMat, targetMat, result, Imgproc.TM_CCOEFF_NORMED)
+
+            val mmr = Core.minMaxLoc(result)
+            if (mmr.maxVal < 0.75) return null
+
+            Point(
+                mmr.maxLoc.x + targetMat.cols() / 2.0,
+                mmr.maxLoc.y + targetMat.rows() / 2.0
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -125,6 +202,7 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopSmartMatching()
         virtualDisplay?.release()
         mediaProjection?.stop()
         instance = null
