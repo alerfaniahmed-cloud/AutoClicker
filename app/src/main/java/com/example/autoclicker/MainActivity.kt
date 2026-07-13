@@ -3,6 +3,7 @@ package com.example.autoclicker
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -20,9 +21,13 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    private var clickX = 500f
-    private var clickY = 900f
+    data class ClickPoint(val x: Float, val y: Float)
+
+    private val points = mutableListOf<ClickPoint>()
+    private val pointMarkers = mutableListOf<View>()
+
     private var isClicking = false
+    private var currentIndex = 0
     private val handler = Handler(Looper.getMainLooper())
     private var intervalMs = 1000L
 
@@ -31,14 +36,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var intervalInput: EditText
     private lateinit var startStopBtn: Button
 
-    private var overlayView: View? = null
+    private var pickerOverlay: View? = null
+    private var stopOverlay: View? = null
 
     private val clickRunnable = object : Runnable {
         override fun run() {
-            if (isClicking) {
+            if (isClicking && points.isNotEmpty()) {
+                val point = points[currentIndex]
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    ClickerAccessibilityService.instance?.performClick(clickX, clickY)
+                    ClickerAccessibilityService.instance?.performClick(point.x, point.y)
                 }
+                currentIndex = (currentIndex + 1) % points.size
                 handler.postDelayed(this, intervalMs)
             }
         }
@@ -69,21 +77,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.clearPointsBtn).setOnClickListener {
+            clearAllPoints()
+        }
+
         startStopBtn.setOnClickListener {
             if (!isClicking) {
+                if (points.isEmpty()) {
+                    statusText.text = "الحالة: أضف نقطة نقر واحدة على الأقل أولاً"
+                    return@setOnClickListener
+                }
                 intervalMs = intervalInput.text.toString().toLongOrNull() ?: 1000L
                 if (ClickerAccessibilityService.instance == null) {
                     statusText.text = "الحالة: فعّل خدمة إمكانية الوصول أولاً"
                     return@setOnClickListener
                 }
-                isClicking = true
-                startStopBtn.text = "إيقاف النقر التلقائي"
-                handler.post(clickRunnable)
+                startClicking()
             } else {
-                isClicking = false
-                startStopBtn.text = "ابدأ النقر التلقائي"
+                stopClicking()
             }
         }
+
+        updatePointText()
     }
 
     override fun onResume() {
@@ -94,16 +109,44 @@ class MainActivity : AppCompatActivity() {
             "الحالة: خدمة إمكانية الوصول غير مفعّلة ⚠️"
     }
 
+    private fun updatePointText() {
+        pointText.text = "عدد نقاط النقر: ${points.size}"
+    }
+
+    private fun startClicking() {
+        isClicking = true
+        currentIndex = 0
+        startStopBtn.text = "إيقاف النقر التلقائي"
+        hideAllMarkers()
+        showStopOverlay()
+        handler.post(clickRunnable)
+    }
+
+    private fun stopClicking() {
+        isClicking = false
+        startStopBtn.text = "ابدأ النقر التلقائي"
+        removeStopOverlay()
+        showAllMarkers()
+    }
+
+    private fun clearAllPoints() {
+        points.clear()
+        hideAllMarkers()
+        pointMarkers.clear()
+        updatePointText()
+    }
+
     private fun showFloatingPicker() {
-        if (overlayView != null) return
+        if (pickerOverlay != null) return
 
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val marker = View(this).apply {
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
                 setColor(0xCCFF0000.toInt())
                 setStroke(4, 0xFFFFFFFF.toInt())
-            }}
+            }
+        }
 
         val size = 100
         val params = WindowManager.LayoutParams(
@@ -117,8 +160,11 @@ class MainActivity : AppCompatActivity() {
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
-        params.x = clickX.toInt() - size / 2
-        params.y = clickY.toInt() - size / 2
+        params.x = 500 - size / 2
+        params.y = 900 - size / 2
+
+        var finalX = 500f
+        var finalY = 900f
 
         marker.setOnTouchListener(object : View.OnTouchListener {
             var initialX = 0
@@ -138,15 +184,13 @@ class MainActivity : AppCompatActivity() {
                         params.x = initialX + (event.rawX - touchX).toInt()
                         params.y = initialY + (event.rawY - touchY).toInt()
                         wm.updateViewLayout(marker, params)
-                        clickX = params.x + size / 2f
-                        clickY = params.y + size / 2f
-                        runOnUiThread {
-                            pointText.text = "نقطة النقر الحالية: ${clickX.toInt()} , ${clickY.toInt()}"
-                        }
+                        finalX = params.x + size / 2f
+                        finalY = params.y + size / 2f
                     }
                     MotionEvent.ACTION_UP -> {
                         wm.removeView(marker)
-                        overlayView = null
+                        pickerOverlay = null
+                        addPointMarker(finalX, finalY)
                     }
                 }
                 return true
@@ -154,6 +198,164 @@ class MainActivity : AppCompatActivity() {
         })
 
         wm.addView(marker, params)
-        overlayView = marker
+        pickerOverlay = marker
+    }
+
+    private fun addPointMarker(x: Float, y: Float) {
+        points.add(ClickPoint(x, y))
+        updatePointText()
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val size = 80
+        val label = TextView(this).apply {
+            text = points.size.toString()
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xCC2196F3.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+
+        val params = WindowManager.LayoutParams(
+            size, size,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = (x - size / 2).toInt()
+        params.y = (y - size / 2).toInt()
+
+        wm.addView(label, params)
+        pointMarkers.add(label)
+    }
+
+    private fun hideAllMarkers() {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        for (marker in pointMarkers) {
+            try {
+                wm.removeView(marker)
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    private fun showAllMarkers() {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val size = 80
+        for ((index, point) in points.withIndex()) {
+            val label = TextView(this).apply {
+                text = (index + 1).toString()
+                setTextColor(0xFFFFFFFF.toInt())
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xCC2196F3.toInt())
+                    setStroke(4, 0xFFFFFFFF.toInt())
+                }
+            }
+            val params = WindowManager.LayoutParams(
+                size, size,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else
+                    WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT
+            )
+            params.gravity = Gravity.TOP or Gravity.START
+            params.x = (point.x - size / 2).toInt()
+            params.y = (point.y - size / 2).toInt()
+            wm.addView(label, params)
+            pointMarkers.add(label)
+        }
+    }
+
+    private fun showStopOverlay() {
+        if (stopOverlay != null) return
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val stopBtn = TextView(this).apply {
+            text = "إيقاف"
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            textSize = 14f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xEEE53935.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+
+        val size = 150
+        val params = WindowManager.LayoutParams(
+            size, size,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 40
+        params.y = 200
+
+        stopBtn.setOnTouchListener(object : View.OnTouchListener {
+            var initialX = 0
+            var initialY = 0
+            var touchX = 0f
+            var touchY = 0f
+            var moved = false
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        moved = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - touchX).toInt()
+                        val dy = (event.rawY - touchY).toInt()
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true
+                        params.x = initialX + dx
+                        params.y = initialY + dy
+                        wm.updateViewLayout(stopBtn, params)
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!moved) {
+                            runOnUiThread { stopClicking() }
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        wm.addView(stopBtn, params)
+        stopOverlay = stopBtn
+    }
+
+    private fun removeStopOverlay() {
+        stopOverlay?.let {
+            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            try {
+                wm.removeView(it)
+            } catch (e: Exception) {
+            }
+        }
+        stopOverlay = null
     }
 }
+                
