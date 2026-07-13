@@ -7,8 +7,6 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -21,15 +19,8 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    data class ClickPoint(val x: Float, val y: Float)
-
     private val points = mutableListOf<ClickPoint>()
     private val pointMarkers = mutableListOf<View>()
-
-    private var isClicking = false
-    private var currentIndex = 0
-    private val handler = Handler(Looper.getMainLooper())
-    private var intervalMs = 1000L
 
     private lateinit var statusText: TextView
     private lateinit var pointText: TextView
@@ -38,19 +29,6 @@ class MainActivity : AppCompatActivity() {
 
     private var pickerOverlay: View? = null
     private var stopOverlay: View? = null
-
-    private val clickRunnable = object : Runnable {
-        override fun run() {
-            if (isClicking && points.isNotEmpty()) {
-                val point = points[currentIndex]
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    ClickerAccessibilityService.instance?.performClick(point.x, point.y)
-                }
-                currentIndex = (currentIndex + 1) % points.size
-                handler.postDelayed(this, intervalMs)
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,19 +60,27 @@ class MainActivity : AppCompatActivity() {
         }
 
         startStopBtn.setOnClickListener {
-            if (!isClicking) {
+            if (!ClickerAccessibilityService.isClicking) {
                 if (points.isEmpty()) {
-                    statusText.text = "الحالة: أضف نقطة نقر واحدة على الأقل أولاً"
+                    statusText.text = "أولاً أضف نقطة نقر واحدة على الأقل"
                     return@setOnClickListener
                 }
-                intervalMs = intervalInput.text.toString().toLongOrNull() ?: 1000L
-                if (ClickerAccessibilityService.instance == null) {
-                    statusText.text = "الحالة: فعّل خدمة إمكانية الوصول أولاً"
+                val service = ClickerAccessibilityService.instance
+                if (service == null) {
+                    statusText.text = "أولاً فعّل خدمة إمكانية الوصول"
                     return@setOnClickListener
                 }
-                startClicking()
+                val interval = intervalInput.text.toString().toLongOrNull() ?: 1000L
+                service.onTick = { runOnUiThread { } }
+                service.startClicking(points.toList(), interval)
+                startStopBtn.text = "إيقاف النقر التلقائي"
+                hideAllMarkers()
+                showStopOverlay()
             } else {
-                stopClicking()
+                ClickerAccessibilityService.instance?.stopClicking()
+                startStopBtn.text = "ابدأ النقر التلقائي"
+                removeStopOverlay()
+                showAllMarkers()
             }
         }
 
@@ -106,27 +92,11 @@ class MainActivity : AppCompatActivity() {
         statusText.text = if (ClickerAccessibilityService.instance != null)
             "الحالة: خدمة إمكانية الوصول مفعّلة ✅"
         else
-            "الحالة: خدمة إمكانية الوصول غير مفعّلة ⚠️"
+            "الحالة: خدمة إمكانية الوصول غير مفعّلة"
     }
 
     private fun updatePointText() {
         pointText.text = "عدد نقاط النقر: ${points.size}"
-    }
-
-    private fun startClicking() {
-        isClicking = true
-        currentIndex = 0
-        startStopBtn.text = "إيقاف النقر التلقائي"
-        hideAllMarkers()
-        showStopOverlay()
-        handler.post(clickRunnable)
-    }
-
-    private fun stopClicking() {
-        isClicking = false
-        startStopBtn.text = "ابدأ النقر التلقائي"
-        removeStopOverlay()
-        showAllMarkers()
     }
 
     private fun clearAllPoints() {
@@ -155,8 +125,7 @@ class MainActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
@@ -224,8 +193,7 @@ class MainActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
@@ -266,8 +234,7 @@ class MainActivity : AppCompatActivity() {
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else
                     WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
             )
             params.gravity = Gravity.TOP or Gravity.START
@@ -301,8 +268,7 @@ class MainActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
@@ -326,16 +292,23 @@ class MainActivity : AppCompatActivity() {
                         moved = false
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        val dx = (event.rawX - touchX).toInt()
-                        val dy = (event.rawY - touchY).toInt()
-                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true
-                        params.x = initialX + dx
-                        params.y = initialY + dy
-                        wm.updateViewLayout(stopBtn, params)
+                        val dx = (event.rawX - touchX)
+                        val dy = (event.rawY - touchY)
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                            params.x = initialX + dx.toInt()
+                            params.y = initialY + dy.toInt()
+                            wm.updateViewLayout(stopBtn, params)
+                            moved = true
+                        }
                     }
                     MotionEvent.ACTION_UP -> {
                         if (!moved) {
-                            runOnUiThread { stopClicking() }
+                            runOnUiThread {
+                                ClickerAccessibilityService.instance?.stopClicking()
+                                startStopBtn.text = "ابدأ النقر التلقائي"
+                                removeStopOverlay()
+                                showAllMarkers()
+                            }
                         }
                     }
                 }
@@ -358,4 +331,3 @@ class MainActivity : AppCompatActivity() {
         stopOverlay = null
     }
 }
-                
