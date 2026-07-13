@@ -103,7 +103,7 @@ class MainActivity : AppCompatActivity() {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setColor(0xCCFF0000.toInt())
                 setStroke(4, 0xFFFFFFFF.toInt())
-            }
+            }}
 
         val size = 60
         val params = WindowManager.LayoutParams(
