@@ -41,10 +41,18 @@ class MainActivity : AppCompatActivity() {
     private var pickerOverlay: View? = null
     private var stopOverlay: View? = null
 
-    private var resizeStartX = 0f
-    private var resizeStartY = 0f
-
     private val handler = Handler(Looper.getMainLooper())
+
+    // متغيرات خاصة بتحديد صورة الهدف (منفصلة تماماً عن نقاط النقر العادية)
+    private var topLeftMarker: View? = null
+    private var bottomRightMarker: View? = null
+    private var boxOutline: View? = null
+    private var confirmBtn: View? = null
+    private var targetHint: View? = null
+    private var topLeftParams: WindowManager.LayoutParams? = null
+    private var bottomRightParams: WindowManager.LayoutParams? = null
+    private var boxParams: WindowManager.LayoutParams? = null
+    private val markerSize = 50
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                 val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 startActivityForResult(mpm.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
             } else {
-                showTargetPicker()
+                showTargetSelector()
             }
         }
 
@@ -181,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             }
             statusText.text = "جاري تجهيز التقاط الشاشة..."
             handler.postDelayed({
-                showTargetPicker()
+                showTargetSelector()
             }, 800)
         }
     }
@@ -270,12 +278,14 @@ class MainActivity : AppCompatActivity() {
         pickerOverlay = marker
     }
 
-    private fun showTargetPicker() {
-        if (pickerOverlay != null) return
+    // ===== تحديد صورة الهدف بعلامتين قابلتين للسحب، بدون حجب باقي الشاشة =====
 
+    private fun showTargetSelector() {
+        if (topLeftMarker != null) return
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
         val hint = TextView(this).apply {
-            text = "اسحب من زاوية لزاوية لتحديد حجم الهدف"
+            text = "اسحب الدائرتين لتحديد زاويتي الهدف، ثم اضغط ✅"
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0xAA000000.toInt())
             setPadding(20, 10, 20, 10)
@@ -293,18 +303,7 @@ class MainActivity : AppCompatActivity() {
         hintParams.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
         hintParams.y = 100
         wm.addView(hint, hintParams)
-
-        val touchCatcher = View(this)
-        val catcherParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        )
+        targetHint = hint
 
         val box = View(this).apply {
             background = GradientDrawable().apply {
@@ -312,8 +311,31 @@ class MainActivity : AppCompatActivity() {
                 setStroke(4, 0xFFFFC107.toInt())
             }
         }
-        val boxParams = WindowManager.LayoutParams(
-            10, 10,
+        val bParams = WindowManager.LayoutParams(
+            160, 160,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        bParams.gravity = Gravity.TOP or Gravity.START
+        bParams.x = 460
+        bParams.y = 820
+        wm.addView(box, bParams)
+        boxOutline = box
+        boxParams = bParams
+
+        val tl = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFFF0000.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+        val tlParams = WindowManager.LayoutParams(
+            markerSize, markerSize,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -321,50 +343,92 @@ class MainActivity : AppCompatActivity() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
-        boxParams.gravity = Gravity.TOP or Gravity.START
+        tlParams.gravity = Gravity.TOP or Gravity.START
+        tlParams.x = 460 - markerSize / 2
+        tlParams.y = 820 - markerSize / 2
 
-        touchCatcher.setOnTouchListener(object : View.OnTouchListener {
+        val br = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF2196F3.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+        val brParams = WindowManager.LayoutParams(
+            markerSize, markerSize,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        brParams.gravity = Gravity.TOP or Gravity.START
+        brParams.x = 460 + 160 - markerSize / 2
+        brParams.y = 820 + 160 - markerSize / 2
+
+        tl.setOnTouchListener(makeCornerTouchListener(wm, tl, tlParams))
+        br.setOnTouchListener(makeCornerTouchListener(wm, br, brParams))
+
+        wm.addView(tl, tlParams)
+        wm.addView(br, brParams)
+        topLeftMarker = tl
+        bottomRightMarker = br
+        topLeftParams = tlParams
+        bottomRightParams = brParams
+
+        val confirm = TextView(this).apply {
+            text = "✅"
+            gravity = Gravity.CENTER
+            textSize = 22f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xEE43A047.toInt())
+                setStroke(4, 0xFFFFFFFF.toInt())
+            }
+        }
+        val confirmParams = WindowManager.LayoutParams(
+            110, 110,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        confirmParams.gravity = Gravity.TOP or Gravity.START
+        confirmParams.x = 40
+        confirmParams.y = 300
+
+        confirm.setOnTouchListener(object : View.OnTouchListener {
+            var initialX = 0
+            var initialY = 0
+            var touchX = 0f
+            var touchY = 0f
+            var moved = false
+
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        resizeStartX = event.rawX
-                        resizeStartY = event.rawY
-                        boxParams.x = resizeStartX.toInt()
-                        boxParams.y = resizeStartY.toInt()
-                        boxParams.width = 10
-                        boxParams.height = 10
-                        if (box.parent == null) {
-                            wm.addView(box, boxParams)
-                        } else {
-                            wm.updateViewLayout(box, boxParams)
-                        }
+                        initialX = confirmParams.x
+                        initialY = confirmParams.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        moved = false
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        val left = Math.min(resizeStartX, event.rawX)
-                        val top = Math.min(resizeStartY, event.rawY)
-                        val w = Math.abs(event.rawX - resizeStartX).toInt().coerceAtLeast(10)
-                        val h = Math.abs(event.rawY - resizeStartY).toInt().coerceAtLeast(10)
-                        boxParams.x = left.toInt()
-                        boxParams.y = top.toInt()
-                        boxParams.width = w
-                        boxParams.height = h
-                        wm.updateViewLayout(box, boxParams)
+                        val dx = (event.rawX - touchX)
+                        val dy = (event.rawY - touchY)
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                            confirmParams.x = initialX + dx.toInt()
+                            confirmParams.y = initialY + dy.toInt()
+                            wm.updateViewLayout(confirm, confirmParams)
+                            moved = true
+                        }
                     }
                     MotionEvent.ACTION_UP -> {
-                        val left = boxParams.x
-                        val top = boxParams.y
-                        val w = boxParams.width
-                        val h = boxParams.height
-                        try { wm.removeView(box) } catch (e: Exception) {}
-                        try { wm.removeView(hint) } catch (e: Exception) {}
-                        try { wm.removeView(touchCatcher) } catch (e: Exception) {}
-                        pickerOverlay = null
-                        if (w > 20 && h > 20) {
-                            handler.postDelayed({
-                                saveTargetImageRect(left, top, w, h)
-                            }, 200)
-                        } else {
-                            statusText.text = "المربع صغير جداً، حاول من جديد"
+                        if (!moved) {
+                            finishTargetSelection()
                         }
                     }
                 }
@@ -372,8 +436,108 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        wm.addView(touchCatcher, catcherParams)
-        pickerOverlay = touchCatcher
+        wm.addView(confirm, confirmParams)
+        confirmBtn = confirm
+
+        statusText.text = "حرك الدائرتين لتحديد الهدف، ثم اضغط ✅"
+    }
+
+    private fun makeCornerTouchListener(
+        wm: WindowManager,
+        view: View,
+        params: WindowManager.LayoutParams
+    ): View.OnTouchListener {
+        return object : View.OnTouchListener {
+            var initialX = 0
+            var initialY = 0
+            var touchX = 0f
+            var touchY = 0f
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - touchX).toInt()
+                        params.y = initialY + (event.rawY - touchY).toInt()
+                        wm.updateViewLayout(view, params)
+                        updateBoxOutline()
+                    }
+                }
+                return true
+            }
+        }
+    }
+
+    private fun updateBoxOutline() {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val tl = topLeftParams ?: return
+        val br = bottomRightParams ?: return
+        val box = boxOutline ?: return
+        val bp = boxParams ?: return
+
+        val tlCx = tl.x + markerSize / 2
+        val tlCy = tl.y + markerSize / 2
+        val brCx = br.x + markerSize / 2
+        val brCy = br.y + markerSize / 2
+
+        val left = Math.min(tlCx, brCx)
+        val top = Math.min(tlCy, brCy)
+        val w = Math.abs(brCx - tlCx).coerceAtLeast(10)
+        val h = Math.abs(brCy - tlCy).coerceAtLeast(10)
+
+        bp.x = left
+        bp.y = top
+        bp.width = w
+        bp.height = h
+        try { wm.updateViewLayout(box, bp) } catch (e: Exception) {}
+    }
+
+    private fun finishTargetSelection() {
+        val tl = topLeftParams
+        val br = bottomRightParams
+        if (tl == null || br == null) return
+
+        val tlCx = tl.x + markerSize / 2
+        val tlCy = tl.y + markerSize / 2
+        val brCx = br.x + markerSize / 2
+        val brCy = br.y + markerSize / 2
+
+        val left = Math.min(tlCx, brCx)
+        val top = Math.min(tlCy, brCy)
+        val w = Math.abs(brCx - tlCx)
+        val h = Math.abs(brCy - tlCy)
+
+        cleanupTargetSelector()
+
+        if (w > 20 && h > 20) {
+            handler.postDelayed({
+                saveTargetImageRect(left, top, w, h)
+            }, 200)
+        } else {
+            statusText.text = "المساحة صغيرة جداً، حاول من جديد"
+        }
+    }
+
+    private fun cleanupTargetSelector() {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        try { topLeftMarker?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try { bottomRightMarker?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try { boxOutline?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try { confirmBtn?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try { targetHint?.let { wm.removeView(it) } } catch (e: Exception) {}
+        topLeftMarker = null
+        bottomRightMarker = null
+        boxOutline = null
+        confirmBtn = null
+        targetHint = null
+        topLeftParams = null
+        bottomRightParams = null
+        boxParams = null
     }
 
     private fun saveTargetImageRect(left: Int, top: Int, w: Int, h: Int) {
@@ -391,6 +555,8 @@ class MainActivity : AppCompatActivity() {
         ScreenCaptureService.targetBitmap = cropped
         statusText.text = "تم حفظ صورة الهدف ✅ الآن اضغط بدء التعرف الذكي"
     }
+
+    // ===== نهاية جزء تحديد الهدف =====
 
     private fun addPointMarker(x: Float, y: Float) {
         points.add(ClickPoint(x, y))
