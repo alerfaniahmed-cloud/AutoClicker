@@ -52,7 +52,7 @@ class ScreenCaptureService : Service() {
                 val point = findMatch(screen, target)
                 if (point != null) {
                     val now = System.currentTimeMillis()
-                    if (now - lastClickTime > 1500) {
+                    if (now - lastClickTime > 400) {
                         lastClickTime = now
                         mainHandler.post {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -64,7 +64,7 @@ class ScreenCaptureService : Service() {
                     }
                 }
             }
-            workerHandler?.postDelayed(this, 700)
+            workerHandler?.postDelayed(this, 200)
         }
     }
 
@@ -157,7 +157,6 @@ class ScreenCaptureService : Service() {
                 y += step
             }
 
-            // شروط مخفّفة إلى مستوى متوازن: يقبل تطابق جيد وليس تطابق مثالي فقط
             if (bestX == -1 || bestScore > 45.0) return null
             if (secondBestScore < bestScore * 1.08) return null
 
