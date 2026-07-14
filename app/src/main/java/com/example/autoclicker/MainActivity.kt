@@ -20,6 +20,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.PrintWriter
@@ -53,6 +54,11 @@ class MainActivity : AppCompatActivity() {
     private var bottomRightParams: WindowManager.LayoutParams? = null
     private var boxParams: WindowManager.LayoutParams? = null
     private val markerSize = 50
+
+    // متغيرات نافذة التكبير (المنظار)
+    private var magnifierView: ImageView? = null
+    private var magnifierParams: WindowManager.LayoutParams? = null
+    private val magnifierSize = 320
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -314,6 +320,26 @@ class MainActivity : AppCompatActivity() {
         wm.addView(hint, hintParams)
         targetHint = hint
 
+        // نافذة المنظار (التكبير المباشر) — تظهر أعلى الشاشة
+        val magnifier = ImageView(this).apply {
+            setBackgroundColor(0xFF000000.toInt())
+            scaleType = ImageView.ScaleType.FIT_XY
+        }
+        val magParams = WindowManager.LayoutParams(
+            magnifierSize, magnifierSize,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        magParams.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        magParams.y = 160
+        wm.addView(magnifier, magParams)
+        magnifierView = magnifier
+        magnifierParams = magParams
+
         val box = View(this).apply {
             background = GradientDrawable().apply {
                 setColor(0x33FFC107)
@@ -448,7 +474,10 @@ class MainActivity : AppCompatActivity() {
         wm.addView(confirm, confirmParams)
         confirmBtn = confirm
 
-        statusText.text = "حرك الدائرتين لتحديد الهدف، ثم اضغط ✅"
+        // أول عرض للمنظار فور فتح أداة التحديد
+        updateBoxOutline()
+
+        statusText.text = "حرك الدائرتين لتحديد الهدف، شوف المنظار فوق للدقة، ثم اضغط ✅"
     }
 
     private fun makeCornerTouchListener(
@@ -504,6 +533,23 @@ class MainActivity : AppCompatActivity() {
         bp.width = w
         bp.height = h
         try { wm.updateViewLayout(box, bp) } catch (e: Exception) {}
+
+        updateMagnifier(left, top, w, h)
+    }
+
+    private fun updateMagnifier(left: Int, top: Int, w: Int, h: Int) {
+        val magView = magnifierView ?: return
+        val svc = ScreenCaptureService.instance ?: return
+        try {
+            val full = svc.captureScreen() ?: return
+            val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
+            val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
+            val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
+            val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
+            val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
+            magView.setImageBitmap(cropped)
+        } catch (e: Exception) {
+        }
     }
 
     private fun finishTargetSelection() {
@@ -539,11 +585,14 @@ class MainActivity : AppCompatActivity() {
         try { boxOutline?.let { wm.removeView(it) } } catch (e: Exception) {}
         try { confirmBtn?.let { wm.removeView(it) } } catch (e: Exception) {}
         try { targetHint?.let { wm.removeView(it) } } catch (e: Exception) {}
+        try { magnifierView?.let { wm.removeView(it) } } catch (e: Exception) {}
         topLeftMarker = null
         bottomRightMarker = null
         boxOutline = null
         confirmBtn = null
         targetHint = null
+        magnifierView = null
+        magnifierParams = null
         topLeftParams = null
         bottomRightParams = null
         boxParams = null
