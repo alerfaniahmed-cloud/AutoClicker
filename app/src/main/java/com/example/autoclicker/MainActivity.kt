@@ -41,6 +41,9 @@ class MainActivity : AppCompatActivity() {
     private var pickerOverlay: View? = null
     private var stopOverlay: View? = null
 
+    private var resizeStartX = 0f
+    private var resizeStartY = 0f
+
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -271,20 +274,30 @@ class MainActivity : AppCompatActivity() {
         if (pickerOverlay != null) return
 
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val marker = TextView(this).apply {
-            text = "🎯"
-            gravity = Gravity.CENTER
-            textSize = 20f
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xCCFFC107.toInt())
-                setStroke(4, 0xFFFFFFFF.toInt())
-            }
+        val hint = TextView(this).apply {
+            text = "اسحب من زاوية لزاوية لتحديد حجم الهدف"
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xAA000000.toInt())
+            setPadding(20, 10, 20, 10)
         }
+        val hintParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        hintParams.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        hintParams.y = 100
+        wm.addView(hint, hintParams)
 
-        val size = 120
-        val params = WindowManager.LayoutParams(
-            size, size,
+        val touchCatcher = View(this)
+        val catcherParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -292,64 +305,89 @@ class MainActivity : AppCompatActivity() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         )
-        params.gravity = Gravity.TOP or Gravity.START
-        params.x = 500 - size / 2
-        params.y = 900 - size / 2
 
-        var finalX = 500f
-        var finalY = 900f
+        val box = View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(0x33FFC107)
+                setStroke(4, 0xFFFFC107.toInt())
+            }
+        }
+        val boxParams = WindowManager.LayoutParams(
+            10, 10,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        boxParams.gravity = Gravity.TOP or Gravity.START
 
-        marker.setOnTouchListener(object : View.OnTouchListener {
-            var initialX = 0
-            var initialY = 0
-            var touchX = 0f
-            var touchY = 0f
-
+        touchCatcher.setOnTouchListener(object : View.OnTouchListener {
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
-                        initialY = params.y
-                        touchX = event.rawX
-                        touchY = event.rawY
+                        resizeStartX = event.rawX
+                        resizeStartY = event.rawY
+                        boxParams.x = resizeStartX.toInt()
+                        boxParams.y = resizeStartY.toInt()
+                        boxParams.width = 10
+                        boxParams.height = 10
+                        if (box.parent == null) {
+                            wm.addView(box, boxParams)
+                        } else {
+                            wm.updateViewLayout(box, boxParams)
+                        }
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - touchX).toInt()
-                        params.y = initialY + (event.rawY - touchY).toInt()
-                        wm.updateViewLayout(marker, params)
-                        finalX = params.x + size / 2f
-                        finalY = params.y + size / 2f
+                        val left = Math.min(resizeStartX, event.rawX)
+                        val top = Math.min(resizeStartY, event.rawY)
+                        val w = Math.abs(event.rawX - resizeStartX).toInt().coerceAtLeast(10)
+                        val h = Math.abs(event.rawY - resizeStartY).toInt().coerceAtLeast(10)
+                        boxParams.x = left.toInt()
+                        boxParams.y = top.toInt()
+                        boxParams.width = w
+                        boxParams.height = h
+                        wm.updateViewLayout(box, boxParams)
                     }
                     MotionEvent.ACTION_UP -> {
-                        wm.removeView(marker)
+                        val left = boxParams.x
+                        val top = boxParams.y
+                        val w = boxParams.width
+                        val h = boxParams.height
+                        try { wm.removeView(box) } catch (e: Exception) {}
+                        try { wm.removeView(hint) } catch (e: Exception) {}
+                        try { wm.removeView(touchCatcher) } catch (e: Exception) {}
                         pickerOverlay = null
-                        handler.postDelayed({
-                            saveTargetImage(finalX, finalY)
-                        }, 200)
+                        if (w > 20 && h > 20) {
+                            handler.postDelayed({
+                                saveTargetImageRect(left, top, w, h)
+                            }, 200)
+                        } else {
+                            statusText.text = "المربع صغير جداً، حاول من جديد"
+                        }
                     }
                 }
                 return true
             }
         })
 
-        wm.addView(marker, params)
-        pickerOverlay = marker
+        wm.addView(touchCatcher, catcherParams)
+        pickerOverlay = touchCatcher
     }
 
-    private fun saveTargetImage(x: Float, y: Float) {
+    private fun saveTargetImageRect(left: Int, top: Int, w: Int, h: Int) {
         val svc = ScreenCaptureService.instance
         val full = svc?.captureScreen()
         if (full == null) {
             statusText.text = "ما قدرت ألتقط الشاشة، حاول مرة ثانية"
             return
         }
-        val boxSize = 160
-        val half = boxSize / 2
-        val left = (x - half).toInt().coerceIn(0, (full.width - boxSize).coerceAtLeast(0))
-        val top = (y - half).toInt().coerceIn(0, (full.height - boxSize).coerceAtLeast(0))
-        val w = boxSize.coerceAtMost(full.width)
-        val h = boxSize.coerceAtMost(full.height)
-        val cropped = Bitmap.createBitmap(full, left, top, w, h)
+        val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
+        val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
+        val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
+        val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
+        val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
         ScreenCaptureService.targetBitmap = cropped
         statusText.text = "تم حفظ صورة الهدف ✅ الآن اضغط بدء التعرف الذكي"
     }
