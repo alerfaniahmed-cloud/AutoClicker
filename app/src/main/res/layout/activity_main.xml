@@ -94,4 +94,13 @@
         android:layout_height="wrap_content"
         android:text="بدء التعرف الذكي" />
 
+    <View android:layout_width="match_parent"
+        android:layout_height="16dp" />
+
+    <Button
+        android:id="@+id/chainTargetsBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="إدارة أهداف السلسلة الذكية" />
+
 </LinearLayout>
