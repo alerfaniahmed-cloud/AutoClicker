@@ -52,7 +52,7 @@ class ScreenCaptureService : Service() {
                 val point = findMatch(screen, target)
                 if (point != null) {
                     val now = System.currentTimeMillis()
-                    if (now - lastClickTime > 250) {
+                    if (now - lastClickTime > 120) {
                         lastClickTime = now
                         mainHandler.post {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -64,7 +64,7 @@ class ScreenCaptureService : Service() {
                     }
                 }
             }
-            workerHandler?.postDelayed(this, 120)
+            workerHandler?.postDelayed(this, 60)
         }
     }
 
