@@ -6,9 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
+import android.graphics.Point
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.graphics.PixelFormat
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
@@ -18,12 +19,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
 import androidx.core.app.NotificationCompat
-import org.opencv.android.Utils
-import org.opencv.core.Core
-import org.opencv.core.CvType
-import org.opencv.core.Mat
-import org.opencv.core.Point
-import org.opencv.imgproc.Imgproc
 
 class ScreenCaptureService : Service() {
 
@@ -78,30 +73,80 @@ class ScreenCaptureService : Service() {
         matchHandler.removeCallbacks(matchRunnable)
     }
 
+    // مطابقة صور بسيطة بدون أي مكتبة خارجية: نصغّر الصورتين ونقارن الألوان
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         return try {
-            val screenMat = Mat()
-            Utils.bitmapToMat(screen, screenMat)
-            val targetMat = Mat()
-            Utils.bitmapToMat(target, targetMat)
+            val scale = 0.25f
+            val tw = (target.width * scale).toInt().coerceAtLeast(4)
+            val th = (target.height * scale).toInt().coerceAtLeast(4)
+            val sw = (screen.width * scale).toInt().coerceAtLeast(4)
+            val sh = (screen.height * scale).toInt().coerceAtLeast(4)
 
-            Imgproc.cvtColor(screenMat, screenMat, Imgproc.COLOR_RGBA2RGB)
-            Imgproc.cvtColor(targetMat, targetMat, Imgproc.COLOR_RGBA2RGB)
+            if (tw >= sw || th >= sh) return null
 
-            val resultCols = screenMat.cols() - targetMat.cols() + 1
-            val resultRows = screenMat.rows() - targetMat.rows() + 1
-            if (resultCols <= 0 || resultRows <= 0) return null
+            val targetSmall = Bitmap.createScaledBitmap(target, tw, th, true)
+            val screenSmall = Bitmap.createScaledBitmap(screen, sw, sh, true)
 
-            val result = Mat(resultRows, resultCols, CvType.CV_32FC1)
-            Imgproc.matchTemplate(screenMat, targetMat, result, Imgproc.TM_CCOEFF_NORMED)
+            val targetPixels = IntArray(tw * th)
+            targetSmall.getPixels(targetPixels, 0, tw, 0, 0, tw, th)
+            val screenPixels = IntArray(sw * sh)
+            screenSmall.getPixels(screenPixels, 0, sw, 0, 0, sw, sh)
 
-            val mmr = Core.minMaxLoc(result)
-            if (mmr.maxVal < 0.75) return null
+            val step = 2
+            val sampleStep = 3
 
-            Point(
-                mmr.maxLoc.x + targetMat.cols() / 2.0,
-                mmr.maxLoc.y + targetMat.rows() / 2.0
-            )
+            var bestScore = Double.MAX_VALUE
+            var bestX = -1
+            var bestY = -1
+            var sampleCount = 0
+
+            var y = 0
+            while (y <= sh - th) {
+                var x = 0
+                while (x <= sw - tw) {
+                    var totalDiff = 0.0
+                    var count = 0
+                    var dy = 0
+                    while (dy < th) {
+                        var dx = 0
+                        while (dx < tw) {
+                            val tPixel = targetPixels[dy * tw + dx]
+                            val sPixel = screenPixels[(y + dy) * sw + (x + dx)]
+
+                            val tr = (tPixel shr 16) and 0xFF
+                            val tg = (tPixel shr 8) and 0xFF
+                            val tb = tPixel and 0xFF
+                            val sr = (sPixel shr 16) and 0xFF
+                            val sg = (sPixel shr 8) and 0xFF
+                            val sb = sPixel and 0xFF
+
+                            totalDiff += Math.abs(tr - sr) + Math.abs(tg - sg) + Math.abs(tb - sb)
+                            count++
+                            dx += sampleStep
+                        }
+                        dy += sampleStep
+                    }
+                    val avgDiff = totalDiff / count
+                    if (avgDiff < bestScore) {
+                        bestScore = avgDiff
+                        bestX = x
+                        bestY = y
+                        sampleCount = count
+                    }
+                    x += step
+                }
+                y += step
+            }
+
+            // عتبة القبول: كل ما قل الرقم زاد التشابه المطلوب (0 = تطابق تام)
+            if (bestX == -1 || bestScore > 35.0) return null
+
+            val centerXSmall = bestX + tw / 2
+            val centerYSmall = bestY + th / 2
+            val fullX = (centerXSmall / scale).toInt()
+            val fullY = (centerYSmall / scale).toInt()
+
+            Point(fullX, fullY)
         } catch (e: Exception) {
             null
         }
