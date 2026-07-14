@@ -21,6 +21,15 @@
         android:paddingBottom="16dp" />
 
     <Button
+        android:id="@+id/addTargetBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="إضافة هدف للسلسلة" />
+
+    <View android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <Button
         android:id="@+id/backBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
