@@ -118,6 +118,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.clearTargetBtn).setOnClickListener {
+            if (ScreenCaptureService.isMatching) {
+                statusText.text = "أوقف التعرف الذكي أولاً قبل مسح الهدف"
+                return@setOnClickListener
+            }
+            ScreenCaptureService.targetBitmap = null
+            statusText.text = "تم مسح صورة الهدف ✅"
+        }
+
         findViewById<Button>(R.id.smartClickBtn).setOnClickListener {
             val svc = ScreenCaptureService.instance
             if (svc == null) {
