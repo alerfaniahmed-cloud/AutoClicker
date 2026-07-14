@@ -80,6 +80,15 @@
         android:layout_height="8dp" />
 
     <Button
+        android:id="@+id/clearTargetBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="مسح صورة الهدف" />
+
+    <View android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <Button
         android:id="@+id/smartClickBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
