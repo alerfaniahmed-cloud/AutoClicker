@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
@@ -59,6 +60,9 @@ class MainActivity : AppCompatActivity() {
     private var magnifierView: ImageView? = null
     private var magnifierParams: WindowManager.LayoutParams? = null
     private val magnifierSize = 320
+    private var lastMagnifierUpdate = 0L
+    private var magnifierThread: HandlerThread? = null
+    private var magnifierHandler: Handler? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -538,17 +542,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMagnifier(left: Int, top: Int, w: Int, h: Int) {
-        val magView = magnifierView ?: return
-        val svc = ScreenCaptureService.instance ?: return
-        try {
-            val full = svc.captureScreen() ?: return
-            val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
-            val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
-            val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
-            val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
-            val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
-            magView.setImageBitmap(cropped)
-        } catch (e: Exception) {
+        val now = System.currentTimeMillis()
+        if (now - lastMagnifierUpdate < 150) return
+        lastMagnifierUpdate = now
+
+        if (magnifierThread == null) {
+            magnifierThread = HandlerThread("MagnifierWorker").apply { start() }
+            magnifierHandler = Handler(magnifierThread!!.looper)
+        }
+
+        magnifierHandler?.post {
+            val svc = ScreenCaptureService.instance ?: return@post
+            try {
+                val full = svc.captureScreen() ?: return@post
+                val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
+                val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
+                val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
+                val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
+                val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
+                handler.post {
+                    magnifierView?.setImageBitmap(cropped)
+                }
+            } catch (e: Exception) {
+            }
         }
     }
 
@@ -596,6 +612,9 @@ class MainActivity : AppCompatActivity() {
         topLeftParams = null
         bottomRightParams = null
         boxParams = null
+        magnifierThread?.quitSafely()
+        magnifierThread = null
+        magnifierHandler = null
     }
 
     private fun saveTargetImageRect(left: Int, top: Int, w: Int, h: Int) {
