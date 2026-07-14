@@ -15,6 +15,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -36,8 +37,12 @@ class ScreenCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private var latestBitmap: Bitmap? = null
 
-    private val matchHandler = Handler(Looper.getMainLooper())
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var lastClickTime = 0L
+
+    // خيط منفصل بالخلفية لأي عملية فحص ثقيلة، حتى لا تجمّد الشاشة
+    private var workerThread: HandlerThread? = null
+    private var workerHandler: Handler? = null
 
     private val matchRunnable = object : Runnable {
         override fun run() {
@@ -50,40 +55,45 @@ class ScreenCaptureService : Service() {
                     val now = System.currentTimeMillis()
                     if (now - lastClickTime > 1500) {
                         lastClickTime = now
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                            ClickerAccessibilityService.instance?.performClick(
-                                point.x.toFloat(), point.y.toFloat()
-                            )
+                        mainHandler.post {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                ClickerAccessibilityService.instance?.performClick(
+                                    point.x.toFloat(), point.y.toFloat()
+                                )
+                            }
                         }
                     }
                 }
             }
-            matchHandler.postDelayed(this, 700)
+            workerHandler?.postDelayed(this, 700)
         }
     }
 
     fun startSmartMatching() {
         if (isMatching) return
         isMatching = true
-        matchHandler.post(matchRunnable)
+        if (workerThread == null) {
+            workerThread = HandlerThread("MatchWorker").apply { start() }
+            workerHandler = Handler(workerThread!!.looper)
+        }
+        workerHandler?.post(matchRunnable)
     }
 
     fun stopSmartMatching() {
         isMatching = false
-        matchHandler.removeCallbacks(matchRunnable)
+        workerHandler?.removeCallbacks(matchRunnable)
     }
 
-    // مطابقة صور دقيقة: نقارن الصورتين بدقة عالية (بدون تصغير كبير) ونشدد شرط القبول
+    // مطابقة صور دقيقة (تشتغل على خيط الخلفية، ما تأثر على سلاسة الشاشة)
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         return try {
-            // نتأكد إن الهدف نفسه فيه تنوع ألوان كافٍ (مو لون واحد مسطح) قبل لا نبحث عنه
             val targetPixelsFull = IntArray(target.width * target.height)
             target.getPixels(targetPixelsFull, 0, target.width, 0, 0, target.width, target.height)
             if (!hasEnoughVariance(targetPixelsFull)) {
                 return null
             }
 
-            val scale = 0.5f
+            val scale = 0.35f
             val tw = (target.width * scale).toInt().coerceAtLeast(6)
             val th = (target.height * scale).toInt().coerceAtLeast(6)
             val sw = (screen.width * scale).toInt().coerceAtLeast(6)
@@ -99,8 +109,8 @@ class ScreenCaptureService : Service() {
             val screenPixels = IntArray(sw * sh)
             screenSmall.getPixels(screenPixels, 0, sw, 0, 0, sw, sh)
 
-            val step = 2
-            val sampleStep = 1
+            val step = 3
+            val sampleStep = 2
 
             var bestScore = Double.MAX_VALUE
             var secondBestScore = Double.MAX_VALUE
@@ -147,10 +157,8 @@ class ScreenCaptureService : Service() {
                 y += step
             }
 
-            // شرط قبول مشدد: التطابق لازم يكون قوي جداً (رقم قليل)
-            // وأفضل نتيجة لازم تكون متميزة بوضوح عن ثاني أفضل نتيجة (يمنع اللخبطة بين عناصر متشابهة)
-            if (bestX == -1 || bestScore > 18.0) return null
-            if (secondBestScore < bestScore * 1.4) return null
+            if (bestX == -1 || bestScore > 20.0) return null
+            if (secondBestScore < bestScore * 1.35) return null
 
             val centerXSmall = bestX + tw / 2
             val centerYSmall = bestY + th / 2
@@ -163,7 +171,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    // يتأكد إن الصورة فيها تنوع ألوان كافٍ (مو زر رمادي مسطح بدون تفاصيل)
     private fun hasEnoughVariance(pixels: IntArray): Boolean {
         if (pixels.isEmpty()) return false
         var sumR = 0L; var sumG = 0L; var sumB = 0L
@@ -288,6 +295,9 @@ class ScreenCaptureService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopSmartMatching()
+        workerThread?.quitSafely()
+        workerThread = null
+        workerHandler = null
         virtualDisplay?.release()
         mediaProjection?.stop()
         instance = null
