@@ -323,7 +323,9 @@ class MainActivity : AppCompatActivity() {
                     MotionEvent.ACTION_UP -> {
                         wm.removeView(marker)
                         pickerOverlay = null
-                        saveTargetImage(finalX, finalY)
+                        handler.postDelayed({
+                            saveTargetImage(finalX, finalY)
+                        }, 200)
                     }
                 }
                 return true
