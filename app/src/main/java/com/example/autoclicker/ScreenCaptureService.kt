@@ -73,14 +73,21 @@ class ScreenCaptureService : Service() {
         matchHandler.removeCallbacks(matchRunnable)
     }
 
-    // مطابقة صور بسيطة بدون أي مكتبة خارجية: نصغّر الصورتين ونقارن الألوان
+    // مطابقة صور دقيقة: نقارن الصورتين بدقة عالية (بدون تصغير كبير) ونشدد شرط القبول
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         return try {
-            val scale = 0.25f
-            val tw = (target.width * scale).toInt().coerceAtLeast(4)
-            val th = (target.height * scale).toInt().coerceAtLeast(4)
-            val sw = (screen.width * scale).toInt().coerceAtLeast(4)
-            val sh = (screen.height * scale).toInt().coerceAtLeast(4)
+            // نتأكد إن الهدف نفسه فيه تنوع ألوان كافٍ (مو لون واحد مسطح) قبل لا نبحث عنه
+            val targetPixelsFull = IntArray(target.width * target.height)
+            target.getPixels(targetPixelsFull, 0, target.width, 0, 0, target.width, target.height)
+            if (!hasEnoughVariance(targetPixelsFull)) {
+                return null
+            }
+
+            val scale = 0.5f
+            val tw = (target.width * scale).toInt().coerceAtLeast(6)
+            val th = (target.height * scale).toInt().coerceAtLeast(6)
+            val sw = (screen.width * scale).toInt().coerceAtLeast(6)
+            val sh = (screen.height * scale).toInt().coerceAtLeast(6)
 
             if (tw >= sw || th >= sh) return null
 
@@ -93,12 +100,12 @@ class ScreenCaptureService : Service() {
             screenSmall.getPixels(screenPixels, 0, sw, 0, 0, sw, sh)
 
             val step = 2
-            val sampleStep = 3
+            val sampleStep = 1
 
             var bestScore = Double.MAX_VALUE
+            var secondBestScore = Double.MAX_VALUE
             var bestX = -1
             var bestY = -1
-            var sampleCount = 0
 
             var y = 0
             while (y <= sh - th) {
@@ -128,18 +135,22 @@ class ScreenCaptureService : Service() {
                     }
                     val avgDiff = totalDiff / count
                     if (avgDiff < bestScore) {
+                        secondBestScore = bestScore
                         bestScore = avgDiff
                         bestX = x
                         bestY = y
-                        sampleCount = count
+                    } else if (avgDiff < secondBestScore) {
+                        secondBestScore = avgDiff
                     }
                     x += step
                 }
                 y += step
             }
 
-            // عتبة القبول: كل ما قل الرقم زاد التشابه المطلوب (0 = تطابق تام)
-            if (bestX == -1 || bestScore > 35.0) return null
+            // شرط قبول مشدد: التطابق لازم يكون قوي جداً (رقم قليل)
+            // وأفضل نتيجة لازم تكون متميزة بوضوح عن ثاني أفضل نتيجة (يمنع اللخبطة بين عناصر متشابهة)
+            if (bestX == -1 || bestScore > 18.0) return null
+            if (secondBestScore < bestScore * 1.4) return null
 
             val centerXSmall = bestX + tw / 2
             val centerYSmall = bestY + th / 2
@@ -150,6 +161,28 @@ class ScreenCaptureService : Service() {
         } catch (e: Exception) {
             null
         }
+    }
+
+    // يتأكد إن الصورة فيها تنوع ألوان كافٍ (مو زر رمادي مسطح بدون تفاصيل)
+    private fun hasEnoughVariance(pixels: IntArray): Boolean {
+        if (pixels.isEmpty()) return false
+        var sumR = 0L; var sumG = 0L; var sumB = 0L
+        for (p in pixels) {
+            sumR += (p shr 16) and 0xFF
+            sumG += (p shr 8) and 0xFF
+            sumB += p and 0xFF
+        }
+        val n = pixels.size
+        val avgR = sumR / n; val avgG = sumG / n; val avgB = sumB / n
+        var varSum = 0.0
+        for (p in pixels) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            varSum += Math.abs(r - avgR) + Math.abs(g - avgG) + Math.abs(b - avgB)
+        }
+        val avgVariance = varSum / n
+        return avgVariance > 8.0
     }
 
     override fun onCreate() {
