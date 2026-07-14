@@ -1,6 +1,7 @@
 package com.example.autoclicker
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -21,6 +22,8 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import java.io.PrintWriter
+import java.io.StringWriter
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,7 +45,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashHandler()
         setContentView(R.layout.activity_main)
+
+        showCrashLogIfExists()
 
         statusText = findViewById(R.id.statusText)
         pointText = findViewById(R.id.pointText)
@@ -130,6 +136,34 @@ class MainActivity : AppCompatActivity() {
         updatePointText()
     }
 
+    private fun installCrashHandler() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val sw = StringWriter()
+                throwable.printStackTrace(PrintWriter(sw))
+                openFileOutput("crash_log.txt", Context.MODE_PRIVATE).use { fos ->
+                    fos.write(sw.toString().toByteArray())
+                }
+            } catch (e: Exception) {
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun showCrashLogIfExists() {
+        val file = getFileStreamPath("crash_log.txt")
+        if (file != null && file.exists()) {
+            val content = try { file.readText() } catch (e: Exception) { "تعذر قراءة الملف" }
+            file.delete()
+            AlertDialog.Builder(this)
+                .setTitle("آخر خطأ حصل بالتطبيق")
+                .setMessage(content)
+                .setPositiveButton("حسناً", null)
+                .show()
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SCREEN_CAPTURE_REQUEST_CODE && resultCode == Activity.RESULT_OK && data != null) {
@@ -151,6 +185,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        showCrashLogIfExists()
         statusText.text = if (ClickerAccessibilityService.instance != null)
             "الحالة: خدمة إمكانية الوصول مفعّلة ✅"
         else
