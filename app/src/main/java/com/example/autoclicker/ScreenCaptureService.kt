@@ -40,7 +40,6 @@ class ScreenCaptureService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastClickTime = 0L
 
-    // خيط منفصل بالخلفية لأي عملية فحص ثقيلة، حتى لا تجمّد الشاشة
     private var workerThread: HandlerThread? = null
     private var workerHandler: Handler? = null
 
@@ -84,8 +83,10 @@ class ScreenCaptureService : Service() {
         workerHandler?.removeCallbacks(matchRunnable)
     }
 
-    // مطابقة صور دقيقة (تشتغل على خيط الخلفية، ما تأثر على سلاسة الشاشة)
+    // مطابقة صور دقيقة، مع تحرير كل صورة مؤقتة من الذاكرة فور الانتهاء منها
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
+        var targetSmall: Bitmap? = null
+        var screenSmall: Bitmap? = null
         return try {
             val targetPixelsFull = IntArray(target.width * target.height)
             target.getPixels(targetPixelsFull, 0, target.width, 0, 0, target.width, target.height)
@@ -101,8 +102,8 @@ class ScreenCaptureService : Service() {
 
             if (tw >= sw || th >= sh) return null
 
-            val targetSmall = Bitmap.createScaledBitmap(target, tw, th, true)
-            val screenSmall = Bitmap.createScaledBitmap(screen, sw, sh, true)
+            targetSmall = Bitmap.createScaledBitmap(target, tw, th, true)
+            screenSmall = Bitmap.createScaledBitmap(screen, sw, sh, true)
 
             val targetPixels = IntArray(tw * th)
             targetSmall.getPixels(targetPixels, 0, tw, 0, 0, tw, th)
@@ -168,6 +169,14 @@ class ScreenCaptureService : Service() {
             Point(fullX, fullY)
         } catch (e: Exception) {
             null
+        } finally {
+            // تحرير الصور المؤقتة من الذاكرة، هذا هو الإصلاح الأساسي
+            targetSmall?.recycle()
+            screenSmall?.recycle()
+            // الصورة الملتقطة من الشاشة تنتهي مهمتها هنا، نحررها لأننا خلقنا نسخة جديدة كل دورة
+            if (screen !== latestBitmap) {
+                screen.recycle()
+            }
         }
     }
 
@@ -268,7 +277,13 @@ class ScreenCaptureService : Service() {
         bitmap.copyPixelsFromBuffer(buffer)
         image.close()
 
+        // تحرير الصورة السابقة من الذاكرة قبل استبدالها بالجديدة
+        val old = latestBitmap
         latestBitmap = bitmap
+        if (old != null && old !== bitmap && !old.isRecycled) {
+            old.recycle()
+        }
+
         return bitmap
     }
 
