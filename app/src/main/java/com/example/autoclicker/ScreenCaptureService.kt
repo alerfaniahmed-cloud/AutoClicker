@@ -83,7 +83,6 @@ class ScreenCaptureService : Service() {
         workerHandler?.removeCallbacks(matchRunnable)
     }
 
-    // مطابقة صور دقيقة، مع تحرير كل صورة مؤقتة من الذاكرة فور الانتهاء منها
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         var targetSmall: Bitmap? = null
         var screenSmall: Bitmap? = null
@@ -158,8 +157,9 @@ class ScreenCaptureService : Service() {
                 y += step
             }
 
-            if (bestX == -1 || bestScore > 20.0) return null
-            if (secondBestScore < bestScore * 1.35) return null
+            // شروط مخفّفة إلى مستوى متوازن: يقبل تطابق جيد وليس تطابق مثالي فقط
+            if (bestX == -1 || bestScore > 45.0) return null
+            if (secondBestScore < bestScore * 1.08) return null
 
             val centerXSmall = bestX + tw / 2
             val centerYSmall = bestY + th / 2
@@ -170,10 +170,8 @@ class ScreenCaptureService : Service() {
         } catch (e: Exception) {
             null
         } finally {
-            // تحرير الصور المؤقتة من الذاكرة، هذا هو الإصلاح الأساسي
             targetSmall?.recycle()
             screenSmall?.recycle()
-            // الصورة الملتقطة من الشاشة تنتهي مهمتها هنا، نحررها لأننا خلقنا نسخة جديدة كل دورة
             if (screen !== latestBitmap) {
                 screen.recycle()
             }
@@ -198,7 +196,7 @@ class ScreenCaptureService : Service() {
             varSum += Math.abs(r - avgR) + Math.abs(g - avgG) + Math.abs(b - avgB)
         }
         val avgVariance = varSum / n
-        return avgVariance > 8.0
+        return avgVariance > 3.0
     }
 
     override fun onCreate() {
@@ -277,7 +275,6 @@ class ScreenCaptureService : Service() {
         bitmap.copyPixelsFromBuffer(buffer)
         image.close()
 
-        // تحرير الصورة السابقة من الذاكرة قبل استبدالها بالجديدة
         val old = latestBitmap
         latestBitmap = bitmap
         if (old != null && old !== bitmap && !old.isRecycled) {
