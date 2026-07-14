@@ -163,6 +163,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.chainTargetsBtn).setOnClickListener {
+            startActivity(Intent(this, ChainTargetsActivity::class.java))
+        }
+
         updatePointText()
     }
 
