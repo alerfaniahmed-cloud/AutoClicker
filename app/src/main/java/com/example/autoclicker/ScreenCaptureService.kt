@@ -93,7 +93,7 @@ class ScreenCaptureService : Service() {
                 return null
             }
 
-            val scale = 0.35f
+            val scale = 0.22f
             val tw = (target.width * scale).toInt().coerceAtLeast(6)
             val th = (target.height * scale).toInt().coerceAtLeast(6)
             val sw = (screen.width * scale).toInt().coerceAtLeast(6)
@@ -109,8 +109,8 @@ class ScreenCaptureService : Service() {
             val screenPixels = IntArray(sw * sh)
             screenSmall.getPixels(screenPixels, 0, sw, 0, 0, sw, sh)
 
-            val step = 3
-            val sampleStep = 2
+            val step = 4
+            val sampleStep = 3
 
             var bestScore = Double.MAX_VALUE
             var secondBestScore = Double.MAX_VALUE
@@ -149,11 +149,13 @@ class ScreenCaptureService : Service() {
                         bestScore = avgDiff
                         bestX = x
                         bestY = y
+                        if (bestScore < 5.0) break
                     } else if (avgDiff < secondBestScore) {
                         secondBestScore = avgDiff
                     }
                     x += step
                 }
+                if (bestScore < 5.0) break
                 y += step
             }
 
