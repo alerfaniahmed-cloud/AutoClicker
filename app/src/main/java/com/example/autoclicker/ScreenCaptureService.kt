@@ -141,22 +141,27 @@ class ScreenCaptureService : Service() {
         val files = TargetStorage.listTargets(context)
         if (files.isEmpty()) return false
 
-        chainTargets.clear()
-        for (f in files) {
-            val bmp = TargetStorage.loadBitmap(f)
-            if (bmp != null) chainTargets.add(bmp)
-        }
-        if (chainTargets.isEmpty()) return false
-
-        chainIndex = 0
-        chainStepStartTime = System.currentTimeMillis()
         isChainMatching = true
 
         if (chainWorkerThread == null) {
             chainWorkerThread = HandlerThread("ChainWorker").apply { start() }
             chainWorkerHandler = Handler(chainWorkerThread!!.looper)
         }
-        chainWorkerHandler?.post(chainRunnable)
+
+        chainWorkerHandler?.post {
+            chainTargets.clear()
+            for (f in files) {
+                val bmp = TargetStorage.loadBitmap(f)
+                if (bmp != null) chainTargets.add(bmp)
+            }
+            if (chainTargets.isEmpty()) {
+                isChainMatching = false
+                return@post
+            }
+            chainIndex = 0
+            chainStepStartTime = System.currentTimeMillis()
+            chainWorkerHandler?.post(chainRunnable)
+        }
         return true
     }
 
