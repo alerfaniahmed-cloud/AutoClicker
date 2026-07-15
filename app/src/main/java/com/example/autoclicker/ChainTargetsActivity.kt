@@ -501,14 +501,19 @@ class ChainTargetsActivity : AppCompatActivity() {
     }
 
     private fun saveTargetImageRect(left: Int, top: Int, w: Int, h: Int) {
-        val svc = ScreenCaptureService.instance
-        val full = svc?.captureScreen() ?: return
-        val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
-        val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
-        val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
-        val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
-        val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
-        TargetStorage.saveTarget(this, cropped)
-        refreshList()
+        Thread {
+            try {
+                val svc = ScreenCaptureService.instance
+                val full = svc?.captureScreen() ?: return@Thread
+                val safeLeft = left.coerceIn(0, (full.width - 1).coerceAtLeast(0))
+                val safeTop = top.coerceIn(0, (full.height - 1).coerceAtLeast(0))
+                val safeW = w.coerceAtMost(full.width - safeLeft).coerceAtLeast(1)
+                val safeH = h.coerceAtMost(full.height - safeTop).coerceAtLeast(1)
+                val cropped = Bitmap.createBitmap(full, safeLeft, safeTop, safeW, safeH)
+                TargetStorage.saveTarget(this, cropped)
+                handler.post { refreshList() }
+            } catch (e: Exception) {
+            }
+        }.start()
     }
 }
