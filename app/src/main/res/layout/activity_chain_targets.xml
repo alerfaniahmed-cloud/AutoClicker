@@ -30,6 +30,15 @@
         android:layout_height="8dp" />
 
     <Button
+        android:id="@+id/startChainBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="بدء السلسلة الذكية" />
+
+    <View android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <Button
         android:id="@+id/backBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
