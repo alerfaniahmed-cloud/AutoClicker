@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Point
@@ -31,6 +32,7 @@ class ScreenCaptureService : Service() {
 
         var targetBitmap: Bitmap? = null
         var isMatching = false
+        var isChainMatching = false
     }
 
     private var virtualDisplay: VirtualDisplay? = null
@@ -42,6 +44,8 @@ class ScreenCaptureService : Service() {
 
     private var workerThread: HandlerThread? = null
     private var workerHandler: Handler? = null
+
+    // ===== منطق التعرف الذكي (هدف واحد) — بدون أي تعديل =====
 
     private val matchRunnable = object : Runnable {
         override fun run() {
@@ -70,6 +74,7 @@ class ScreenCaptureService : Service() {
 
     fun startSmartMatching() {
         if (isMatching) return
+        stopChainMatching()
         isMatching = true
         if (workerThread == null) {
             workerThread = HandlerThread("MatchWorker").apply { start() }
@@ -82,6 +87,85 @@ class ScreenCaptureService : Service() {
         isMatching = false
         workerHandler?.removeCallbacks(matchRunnable)
     }
+
+    // ===== منطق السلسلة الذكية المشروطة (عدة أهداف مرتبة) =====
+
+    private var chainWorkerThread: HandlerThread? = null
+    private var chainWorkerHandler: Handler? = null
+    private var chainTargets: MutableList<Bitmap> = mutableListOf()
+    private var chainIndex = 0
+    private var chainStepStartTime = 0L
+    private var lastChainClickTime = 0L
+    private val chainTimeoutMs = 10000L
+
+    private val chainRunnable = object : Runnable {
+        override fun run() {
+            if (!isChainMatching) return
+            if (chainTargets.isEmpty()) {
+                chainWorkerHandler?.postDelayed(this, 200)
+                return
+            }
+
+            val now = System.currentTimeMillis()
+            if (now - chainStepStartTime > chainTimeoutMs) {
+                chainIndex = 0
+                chainStepStartTime = now
+            }
+
+            val target = chainTargets[chainIndex]
+            val screen = captureScreen()
+            if (screen != null) {
+                val point = findMatch(screen, target)
+                if (point != null && now - lastChainClickTime > 120) {
+                    lastChainClickTime = now
+                    val clickPoint = point
+                    mainHandler.post {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            ClickerAccessibilityService.instance?.performClick(
+                                clickPoint.x.toFloat(), clickPoint.y.toFloat()
+                            )
+                        }
+                    }
+                    chainIndex = (chainIndex + 1) % chainTargets.size
+                    chainStepStartTime = System.currentTimeMillis()
+                }
+            }
+            chainWorkerHandler?.postDelayed(this, 60)
+        }
+    }
+
+    fun startChainMatching(context: Context): Boolean {
+        if (isChainMatching) return true
+        stopSmartMatching()
+
+        val files = TargetStorage.listTargets(context)
+        if (files.isEmpty()) return false
+
+        chainTargets.clear()
+        for (f in files) {
+            val bmp = TargetStorage.loadBitmap(f)
+            if (bmp != null) chainTargets.add(bmp)
+        }
+        if (chainTargets.isEmpty()) return false
+
+        chainIndex = 0
+        chainStepStartTime = System.currentTimeMillis()
+        isChainMatching = true
+
+        if (chainWorkerThread == null) {
+            chainWorkerThread = HandlerThread("ChainWorker").apply { start() }
+            chainWorkerHandler = Handler(chainWorkerThread!!.looper)
+        }
+        chainWorkerHandler?.post(chainRunnable)
+        return true
+    }
+
+    fun stopChainMatching() {
+        isChainMatching = false
+        chainWorkerHandler?.removeCallbacks(chainRunnable)
+    }
+
+    // ===== خوارزمية المطابقة المشتركة (مستخدمة من الوضعين) =====
 
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         var targetSmall: Bitmap? = null
@@ -308,9 +392,13 @@ class ScreenCaptureService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopSmartMatching()
+        stopChainMatching()
         workerThread?.quitSafely()
         workerThread = null
         workerHandler = null
+        chainWorkerThread?.quitSafely()
+        chainWorkerThread = null
+        chainWorkerHandler = null
         virtualDisplay?.release()
         mediaProjection?.stop()
         instance = null
