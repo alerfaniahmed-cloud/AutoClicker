@@ -22,6 +22,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class ChainTargetsActivity : AppCompatActivity() {
@@ -32,10 +33,10 @@ class ChainTargetsActivity : AppCompatActivity() {
 
     private lateinit var container: LinearLayout
     private lateinit var countText: TextView
+    private lateinit var startChainBtn: Button
 
     private val handler = Handler(Looper.getMainLooper())
 
-    // متغيرات أداة تحديد الهدف (نفس آلية الشاشة الرئيسية، مستقلة هنا)
     private var topLeftMarker: View? = null
     private var bottomRightMarker: View? = null
     private var boxOutline: View? = null
@@ -58,6 +59,7 @@ class ChainTargetsActivity : AppCompatActivity() {
 
         container = findViewById(R.id.targetsListContainer)
         countText = findViewById(R.id.chainCountText)
+        startChainBtn = findViewById(R.id.startChainBtn)
 
         findViewById<Button>(R.id.backBtn).setOnClickListener {
             finish()
@@ -77,6 +79,31 @@ class ChainTargetsActivity : AppCompatActivity() {
                 startActivityForResult(mpm.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
             } else {
                 showTargetSelector()
+            }
+        }
+
+        startChainBtn.setOnClickListener {
+            val svc = ScreenCaptureService.instance
+            if (svc == null) {
+                Toast.makeText(this, "أولاً أضف هدف واحد على الأقل (يشغّل خدمة التقاط الشاشة)", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (ClickerAccessibilityService.instance == null) {
+                Toast.makeText(this, "فعّل خدمة إمكانية الوصول أولاً", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (ScreenCaptureService.isChainMatching) {
+                svc.stopChainMatching()
+                startChainBtn.text = "بدء السلسلة الذكية"
+                Toast.makeText(this, "السلسلة الذكية متوقفة", Toast.LENGTH_SHORT).show()
+            } else {
+                val started = svc.startChainMatching(this)
+                if (started) {
+                    startChainBtn.text = "إيقاف السلسلة الذكية"
+                    Toast.makeText(this, "السلسلة الذكية شغالة...", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "أضف هدف واحد على الأقل للسلسلة أولاً", Toast.LENGTH_LONG).show()
+                }
             }
         }
 
@@ -104,6 +131,10 @@ class ChainTargetsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshList()
+        startChainBtn.text = if (ScreenCaptureService.isChainMatching)
+            "إيقاف السلسلة الذكية"
+        else
+            "بدء السلسلة الذكية"
     }
 
     private fun refreshList() {
@@ -157,7 +188,7 @@ class ChainTargetsActivity : AppCompatActivity() {
         }
     }
 
-    // ===== أداة تحديد الهدف (نسخة مستقلة لهذي الشاشة) =====
+    // ===== أداة تحديد الهدف =====
 
     private fun showTargetSelector() {
         if (topLeftMarker != null) return
