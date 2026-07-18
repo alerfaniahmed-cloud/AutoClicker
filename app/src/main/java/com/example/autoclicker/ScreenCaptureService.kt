@@ -88,15 +88,13 @@ class ScreenCaptureService : Service() {
         workerHandler?.removeCallbacks(matchRunnable)
     }
 
-    // ===== منطق السلسلة الذكية المشروطة (عدة أهداف مرتبة) =====
+    // ===== منطق التعرف متعدد الأهداف: يفحص كل الصور المحفوظة، وأي وحدة تنطبق ينقر عليها =====
+    // بدون ترتيب، بدون مؤقتات — كل دورة يمر على القائمة ويوقف عند أول تطابق
 
     private var chainWorkerThread: HandlerThread? = null
     private var chainWorkerHandler: Handler? = null
     private var chainTargets: MutableList<Bitmap> = mutableListOf()
-    private var chainIndex = 0
-    private var chainStepStartTime = 0L
     private var lastChainClickTime = 0L
-    private val chainTimeoutMs = 10000L
 
     private val chainRunnable = object : Runnable {
         override fun run() {
@@ -106,31 +104,28 @@ class ScreenCaptureService : Service() {
                 return
             }
 
-            val now = System.currentTimeMillis()
-            if (now - chainStepStartTime > chainTimeoutMs) {
-                chainIndex = 0
-                chainStepStartTime = now
-            }
-
-            val target = chainTargets[chainIndex]
             val screen = captureScreen()
             if (screen != null) {
-                val point = findMatch(screen, target)
-                if (point != null && now - lastChainClickTime > 120) {
-                    lastChainClickTime = now
-                    val clickPoint = point
-                    mainHandler.post {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                            ClickerAccessibilityService.instance?.performClick(
-                                clickPoint.x.toFloat(), clickPoint.y.toFloat()
-                            )
+                val now = System.currentTimeMillis()
+                if (now - lastChainClickTime > 120) {
+                    for (target in chainTargets) {
+                        val point = findMatch(screen, target)
+                        if (point != null) {
+                            lastChainClickTime = now
+                            val clickPoint = point
+                            mainHandler.post {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    ClickerAccessibilityService.instance?.performClick(
+                                        clickPoint.x.toFloat(), clickPoint.y.toFloat()
+                                    )
+                                }
+                            }
+                            break
                         }
                     }
-                    chainIndex = (chainIndex + 1) % chainTargets.size
-                    chainStepStartTime = System.currentTimeMillis()
                 }
             }
-            chainWorkerHandler?.postDelayed(this, 60)
+            chainWorkerHandler?.postDelayed(this, 80)
         }
     }
 
@@ -158,8 +153,6 @@ class ScreenCaptureService : Service() {
                 isChainMatching = false
                 return@post
             }
-            chainIndex = 0
-            chainStepStartTime = System.currentTimeMillis()
             chainWorkerHandler?.post(chainRunnable)
         }
         return true
@@ -170,7 +163,7 @@ class ScreenCaptureService : Service() {
         chainWorkerHandler?.removeCallbacks(chainRunnable)
     }
 
-    // ===== خوارزمية المطابقة المشتركة (مستخدمة من الوضعين) =====
+    // ===== خوارزمية المطابقة المشتركة =====
 
     private fun findMatch(screen: Bitmap, target: Bitmap): Point? {
         var targetSmall: Bitmap? = null
