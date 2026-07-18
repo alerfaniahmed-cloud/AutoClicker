@@ -39,7 +39,17 @@ object TargetStorage {
 
     fun loadBitmap(file: File): Bitmap? {
         return try {
-            BitmapFactory.decodeFile(file.absolutePath)
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inMutable = true
+            }
+            val decoded = BitmapFactory.decodeFile(file.absolutePath, options)
+            if (decoded != null && decoded.config != Bitmap.Config.ARGB_8888) {
+                // ضمان إضافي: نحوّلها بالقوة لصيغة نقدر نقرأ بكسلاتها منها بأمان
+                decoded.copy(Bitmap.Config.ARGB_8888, false)
+            } else {
+                decoded
+            }
         } catch (e: Exception) {
             null
         }
