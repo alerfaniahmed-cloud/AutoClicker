@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.DisplayMetrics
 import androidx.core.app.NotificationCompat
 
@@ -45,7 +46,23 @@ class ScreenCaptureService : Service() {
     private var workerThread: HandlerThread? = null
     private var workerHandler: Handler? = null
 
-    // ===== منطق التعرف الذكي (هدف واحد) — بدون أي تعديل =====
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AutoClicker::MatchWakeLock")
+        wakeLock?.acquire(10 * 60 * 1000L)
+    }
+
+    private fun releaseWakeLockIfIdle() {
+        if (!isMatching && !isChainMatching) {
+            try { wakeLock?.release() } catch (e: Exception) {}
+            wakeLock = null
+        }
+    }
+
+    // ===== منطق التعرف الذكي (هدف واحد) =====
 
     private val matchRunnable = object : Runnable {
         override fun run() {
@@ -76,6 +93,7 @@ class ScreenCaptureService : Service() {
         if (isMatching) return
         stopChainMatching()
         isMatching = true
+        acquireWakeLock()
         if (workerThread == null) {
             workerThread = HandlerThread("MatchWorker").apply { start() }
             workerHandler = Handler(workerThread!!.looper)
@@ -86,10 +104,10 @@ class ScreenCaptureService : Service() {
     fun stopSmartMatching() {
         isMatching = false
         workerHandler?.removeCallbacks(matchRunnable)
+        releaseWakeLockIfIdle()
     }
 
-    // ===== منطق التعرف متعدد الأهداف: يفحص كل الصور المحفوظة، وأي وحدة تنطبق ينقر عليها =====
-    // بدون ترتيب، بدون مؤقتات — كل دورة يمر على القائمة ويوقف عند أول تطابق
+    // ===== منطق التعرف متعدد الأهداف =====
 
     private var chainWorkerThread: HandlerThread? = null
     private var chainWorkerHandler: Handler? = null
@@ -137,6 +155,7 @@ class ScreenCaptureService : Service() {
         if (files.isEmpty()) return false
 
         isChainMatching = true
+        acquireWakeLock()
 
         if (chainWorkerThread == null) {
             chainWorkerThread = HandlerThread("ChainWorker").apply { start() }
@@ -161,6 +180,7 @@ class ScreenCaptureService : Service() {
     fun stopChainMatching() {
         isChainMatching = false
         chainWorkerHandler?.removeCallbacks(chainRunnable)
+        releaseWakeLockIfIdle()
     }
 
     // ===== خوارزمية المطابقة المشتركة =====
@@ -399,6 +419,8 @@ class ScreenCaptureService : Service() {
         chainWorkerHandler = null
         virtualDisplay?.release()
         mediaProjection?.stop()
+        try { wakeLock?.release() } catch (e: Exception) {}
+        wakeLock = null
         instance = null
     }
 
